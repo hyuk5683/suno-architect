@@ -5,30 +5,18 @@ import { Sparkles, Disc, Music2, Trash2, Copy, Mic2, Radio, Play, Loader2, Image
 /* API SERVICE                                */
 /* -------------------------------------------------------------------------- */
 
-// Vercel 빌드 환경(es2015) 호환성을 위해 안전하게 환경 변수에 접근합니다.
-const getApiKey = () => {
-  try {
-    return import.meta.env.VITE_GEMINI_API_KEY || "";
-  } catch (e) {
-    return "";
-  }
-};
+const apiKey = "";
 
-const apiKey = getApiKey();
-
-// 재시도 로직이 포함된 Fetch 헬퍼
 const fetchWithRetry = async (url, options) => {
   const delays = [1000, 2000, 4000, 8000, 16000];
   for (let i = 0; i < 5; i++) {
     try {
       const response = await fetch(url, options);
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(`API Key Error (${response.status}): Vercel 환경 변수 설정을 확인해주세요.`);
-      }
+      if (response.status === 401 || response.status === 403) throw new Error(`API 권한 오류: API 키를 확인해주세요.`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return response;
     } catch (error) {
-      if (error.message.includes("401") || error.message.includes("403")) throw error;
+      if (error.message.includes("권한")) throw error;
       if (i === 4) throw error;
       await new Promise(resolve => setTimeout(resolve, delays[i]));
     }
@@ -36,7 +24,6 @@ const fetchWithRetry = async (url, options) => {
 };
 
 const geminiService = {
-  // 1. 가사 및 스타일 생성
   generateSongs: async (keywords, count, musicType) => {
     try {
       const specificInstructions = musicType === 'instrumental' 
@@ -50,23 +37,21 @@ const geminiService = {
         
         CRITICAL LANGUAGE RULE:
         - Detect input language: "${keywords}".
-        - Output "title", "style", and "lyrics" content in that SAME language.
+        - Output "title" and "lyrics" content in that SAME language.
+        - Output "style" content ONLY IN ENGLISH (Suno AI understands English tags best).
         
         ${specificInstructions}
         
         Format: Return ONLY a raw JSON array.
         [
           {
-            "id": "uid",
             "title": "Song Title",
             "style": "Description",
             "mood": "Visual mood for art (in English)",
             "lyrics": {
               "structure": [
                 { "tag": "[Intro]", "content": "..." },
-                { "tag": "[Verse 1]", "content": "..." },
-                { "tag": "[Chorus]", "content": "..." },
-                { "tag": "[Outro]", "content": "..." }
+                { "tag": "[Verse 1]", "content": "..." }
               ]
             }
           }
@@ -84,20 +69,30 @@ const geminiService = {
 
       const data = await response.json();
       let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("API로부터 유효한 응답을 받지 못했습니다.");
-      
-      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(text);
+      if (!text) throw new Error("API 응답이 비어있습니다.");
+
+      // ⭐️ ChatGPT 제안 반영: 매우 강력한 JSON 파싱 방어 로직
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+          parsed = JSON.parse(match[0]);
+        } else {
+          throw new Error("JSON 파싱 실패");
+        }
+      }
+      return parsed;
     } catch (err) {
       console.error(err);
       throw err;
     }
   },
 
-  // 2. 이미지 프롬프트 생성
   generateArtPrompt: async (song, artStyle, aspectRatio) => {
     try {
-      const prompt = `Digital art director. 8k UHD album cover for "${song.title}". Mood: ${song.mood}. Style: ${artStyle}. Aspect: ${aspectRatio}. English tags only. No text in image.`;
+      const prompt = `Digital art director. 8k UHD album cover artwork. Mood: ${song.mood}. Style: ${artStyle}. Aspect: ${aspectRatio}. English tags only. ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY in the image. Ensure musical instruments are depicted realistically without unnatural physical phenomena.`;
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,8 +103,8 @@ const geminiService = {
     } catch (e) { return "artistic cover"; }
   },
 
-  // 3. 이미지 생성
   generateImage: async (visualPrompt, aspectRatio) => {
+    // 1. 완벽한 화면 비율(16:9, 9:16)을 지원하는 Imagen 4.0을 메인으로 사용
     try {
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST',
@@ -121,8 +116,9 @@ const geminiService = {
       });
       const data = await response.json();
       if (data.predictions?.[0]) return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
-    } catch (e) { console.warn("Imagen failed, trying fallback..."); }
+    } catch (e) { console.warn("Imagen 4.0 failed, trying Gemini Flash Image fallback..."); }
 
+    // 2. 백업 모델 (Gemini Flash Image)
     try {
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
         method: 'POST',
@@ -135,33 +131,30 @@ const geminiService = {
       const data = await response.json();
       const imgData = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
       if (imgData) return `data:image/png;base64,${imgData}`;
+      throw new Error("이미지 생성에 실패했습니다.");
     } catch (e) { throw e; }
   },
 
   remixStyle: async (currentStyle, musicType, modification) => {
-    try {
-      const prompt = `Modify music style. Current: "${currentStyle}". Request: "${modification}". Output ONLY the new style string in the same language.`;
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || currentStyle;
-    } catch (e) { return currentStyle; }
+    const prompt = `Modify music style. Current: "${currentStyle}". Request: "${modification}". Output ONLY the new style string in the original language.`;
+    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text.trim();
   },
 
   rewriteLyricBlock: async (tag, content, instruction) => {
-    try {
-      const prompt = `Rewrite section [${tag}]. Current: "${content}". Instruction: "${instruction}". Output ONLY new content in same language.`;
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || content;
-    } catch (e) { return content; }
+    const prompt = `Rewrite section [${tag}]. Current: "${content}". Instruction: "${instruction}". Output ONLY new content in original language.`;
+    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text.trim();
   }
 };
 
@@ -232,6 +225,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [artStyle, setArtStyle] = useState("Cinematic");
   const [aspectRatio, setAspectRatio] = useState("16:9");
+  
   const [modalOpen, setModalOpen] = useState(false);
   const [modalConfig, setModalConfig] = useState({ title: '', placeholder: '', type: '', tag: '' });
   const [previewImage, setPreviewImage] = useState(null);
@@ -244,16 +238,22 @@ const App = () => {
     setLoading(true);
     try {
       const res = await geminiService.generateSongs(input, songCount, mode);
-      // 데이터 안정성 확보를 위해 구조 검증 후 매핑
-      const processed = (res || []).map(s => ({
+      
+      // ⭐️ ChatGPT 제안 반영: 매우 강력한 구조 검증 및 UUID 적용
+      const processed = (Array.isArray(res) ? res : []).map(s => ({
         ...s,
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(), // Deprecated된 substr 대신 모던 스펙 사용
         coverUrl: null,
         artStatus: 'idle',
-        lyrics: s.lyrics || { structure: [] }
+        lyrics: {
+          structure: Array.isArray(s?.lyrics?.structure) ? s.lyrics.structure : []
+        }
       }));
+
+      if (processed.length === 0) throw new Error("생성된 곡 데이터가 없습니다.");
+
       setSongs(prev => [...processed, ...prev]);
-      if (processed.length > 0) setSelectedId(processed[0].id);
+      setSelectedId(processed[0].id);
     } catch (err) { 
       alert(err.message || "생성 중 오류가 발생했습니다."); 
     } finally { 
@@ -261,8 +261,8 @@ const App = () => {
     }
   };
 
-  const handleGenerateArt = async (song) => {
-    if (!song || song.artStatus === 'generating') return;
+  const handleGenerateArt = async (song, forceRegenerate = false) => {
+    if (!song || (!forceRegenerate && song.artStatus === 'generating')) return;
     setSongs(prev => prev.map(s => s.id === song.id ? { ...s, artStatus: 'generating' } : s));
     try {
       const prompt = await geminiService.generateArtPrompt(song, artStyle, aspectRatio);
@@ -303,9 +303,7 @@ const App = () => {
           lyrics: { ...s.lyrics, structure: newStructure } 
         } : s));
       }
-    } catch (e) { 
-      alert("수정 중 오류가 발생했습니다."); 
-    }
+    } catch (e) { alert("수정 중 오류가 발생했습니다."); }
   };
 
   const copyToClipboard = (text) => {
@@ -355,7 +353,7 @@ const App = () => {
               </div>
             </div>
             <div className="flex-1 flex gap-2">
-              <input value={input} onChange={e => setInput(e.target.value)} disabled={loading} placeholder="어떤 노래를 만들고 싶으신가요? (예: 슬픈 분위기의 재즈)" className="flex-1 bg-white text-slate-900 rounded-lg px-4 text-sm font-medium outline-none" />
+              <input value={input} onChange={e => setInput(e.target.value)} disabled={loading} placeholder="Describe your song idea (e.g., Sad cinematic jazz)..." className="flex-1 bg-white text-slate-900 rounded-lg px-4 text-sm font-medium outline-none" />
               <button disabled={loading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 px-6 rounded-lg font-bold text-sm transition-all whitespace-nowrap shadow-lg shadow-indigo-500/20">
                 {loading ? 'GENERATING...' : 'CREATE'}
               </button>
@@ -390,7 +388,15 @@ const App = () => {
                 <div className="shrink-0 flex flex-col gap-3">
                   <div className={`relative group w-full lg:w-80 bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden shadow-2xl transition-all duration-300 ${aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16] lg:w-56'}`}>
                     {selectedSong.coverUrl ? (
-                      <img src={selectedSong.coverUrl} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setPreviewImage(selectedSong.coverUrl)} />
+                      <>
+                        <img src={selectedSong.coverUrl} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setPreviewImage(selectedSong.coverUrl)} />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-opacity duration-200">
+                          <div className="flex gap-2">
+                            <a href={selectedSong.coverUrl} download="cover.png" className="px-4 py-2 bg-white hover:bg-slate-200 text-black rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><Copy className="w-4 h-4" /> Download</a>
+                            <button onClick={() => handleGenerateArt(selectedSong, true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><RefreshCw className="w-4 h-4" /> Regenerate</button>
+                          </div>
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center p-4">
                         {selectedSong.artStatus === 'generating' ? (
