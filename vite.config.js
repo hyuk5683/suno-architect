@@ -5,6 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    target: "esnext" // Vercel 빌드 시 import.meta 에러를 방지하는 핵심 설정!
+    target: "esnext" // ⭐️ Vercel 빌드 에러를 완벽하게 막아주는 핵심 줄입니다!
   }
 })
