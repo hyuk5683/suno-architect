@@ -1,21 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Disc, Music2, Trash2, Copy, Mic2, Radio, Play, Loader2, Image as ImageIcon, Zap, AlertTriangle, Wand2, Paintbrush, Sliders, Edit3, RefreshCw, X, Check, ChevronDown, Palette, Lightbulb, Maximize2, Monitor, Smartphone } from 'lucide-react';
+import { Sparkles, Disc, Music2, Trash2, Copy, Mic2, Radio, Play, Loader2, Image as ImageIcon, Zap, AlertTriangle, Wand2, Paintbrush, Sliders, Edit3, RefreshCw, X, Check, ChevronDown, Palette, Lightbulb, Maximize2, Monitor, Smartphone, Settings } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
 /* API SERVICE                                */
 /* -------------------------------------------------------------------------- */
-
-// 🚨 Canvas 컴파일 환경(es2015) 오류를 방지하기 위해 임시로 비워둡니다.
-// Vercel 배포 시 VS Code에서 반드시 아래 주석 처리된 코드로 교체하세요!
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const apiKey = "";
 
 const fetchWithRetry = async (url, options) => {
   const delays = [1000, 2000, 4000, 8000, 16000];
   for (let i = 0; i < 5; i++) {
     try {
       const response = await fetch(url, options);
-      if (response.status === 401 || response.status === 403) throw new Error(`API 권한 오류: API 키가 거부되었습니다 (403).`);
+      if (response.status === 401 || response.status === 403) throw new Error(`API 권한 오류: API 키가 잘못되었거나 만료되었습니다. 우측 상단 ⚙️ 설정에서 키를 다시 확인해주세요.`);
       if (response.status === 404) throw new Error(`API 모델 오류: 해당 AI 모델을 찾을 수 없습니다 (404).`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return response;
@@ -27,8 +22,9 @@ const fetchWithRetry = async (url, options) => {
   }
 };
 
+// 모든 API 함수에 apiKey를 파라미터로 받도록 수정 (보안 강화)
 const geminiService = {
-  generateSongs: async (keywords, count, musicType) => {
+  generateSongs: async (apiKey, keywords, count, musicType) => {
     try {
       const specificInstructions = musicType === 'instrumental' 
         ? `FOR INSTRUMENTAL: Write a DESCRIPTIVE PARAGRAPH (150-200 chars) in "style". "lyrics" field should be a structural breakdown.`
@@ -62,7 +58,6 @@ const geminiService = {
         ]
       `;
 
-      // ⭐️ 정식 출시 모델인 gemini-1.5-flash 사용
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +89,7 @@ const geminiService = {
     }
   },
 
-  generateArtPrompt: async (song, artStyle, aspectRatio) => {
+  generateArtPrompt: async (apiKey, song, artStyle, aspectRatio) => {
     try {
       const prompt = `Digital art director. 8k UHD album cover artwork. Mood: ${song.mood}. Style: ${artStyle}. Aspect: ${aspectRatio}. English tags only. ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY in the image. Ensure musical instruments are depicted realistically without unnatural physical phenomena.`;
       
@@ -108,9 +103,8 @@ const geminiService = {
     } catch (e) { return "artistic cover"; }
   },
 
-  generateImage: async (visualPrompt, aspectRatio) => {
+  generateImage: async (apiKey, visualPrompt, aspectRatio) => {
     try {
-      // ⭐️ 정식 이미지 모델인 imagen-3.0-generate-001 사용
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,7 +119,7 @@ const geminiService = {
     } catch (e) { throw e; }
   },
 
-  remixStyle: async (currentStyle, musicType, modification) => {
+  remixStyle: async (apiKey, currentStyle, musicType, modification) => {
     const prompt = `Modify music style. Current: "${currentStyle}". Request: "${modification}". Output ONLY the new style string in the original language.`;
     const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -136,7 +130,7 @@ const geminiService = {
     return data.candidates[0].content.parts[0].text.trim();
   },
 
-  rewriteLyricBlock: async (tag, content, instruction) => {
+  rewriteLyricBlock: async (apiKey, tag, content, instruction) => {
     const prompt = `Rewrite section [${tag}]. Current: "${content}". Instruction: "${instruction}". Output ONLY new content in original language.`;
     const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -151,6 +145,36 @@ const geminiService = {
 /* -------------------------------------------------------------------------- */
 /* UI COMPONENTS                                 */
 /* -------------------------------------------------------------------------- */
+
+const SettingsModal = ({ isOpen, currentKey, onClose, onSave }) => {
+  const [val, setVal] = useState(currentKey || '');
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+          <Settings className="w-5 h-5 text-indigo-400" /> API 키 설정
+        </h3>
+        <p className="text-xs text-slate-400 mb-6">
+          이곳에 입력하신 구글 Gemini API 키는 오직 <b>현재 사용중인 기기(브라우저)</b>에만 안전하게 저장되며, 외부로 유출되지 않습니다.
+        </p>
+        <input
+          type="password"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="AIzaSy..."
+          className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:ring-2 focus:ring-indigo-500 outline-none mb-6 font-mono"
+        />
+        <div className="flex justify-end gap-3">
+          {currentKey && <button onClick={onClose} className="px-4 py-2 text-slate-400 font-bold hover:text-white transition-colors">취소</button>}
+          <button onClick={() => onSave(val)} disabled={!val.trim()} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all">
+            저장 및 시작
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const InputModal = ({ isOpen, title, placeholder, onClose, onSubmit }) => {
   const [value, setValue] = useState('');
@@ -207,6 +231,10 @@ const LyricBlock = ({ tag, content, onRequestRewrite }) => (
 const ART_STYLES = ["Cinematic", "Digital Art", "Anime", "Oil Painting", "Cyberpunk", "Minimalist", "3D Render", "Noir"];
 
 const App = () => {
+  // 로컬 스토리지에서 API 키 불러오기
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('SUNO_API_KEY') || '');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(!apiKey); // 키가 없으면 자동으로 설정창 띄움
+
   const [input, setInput] = useState('');
   const [mode, setMode] = useState('vocal');
   const [songCount, setSongCount] = useState(3);
@@ -222,12 +250,27 @@ const App = () => {
 
   const selectedSong = songs.find(s => s.id === selectedId);
 
+  const saveApiKey = (key) => {
+    localStorage.setItem('SUNO_API_KEY', key);
+    setApiKey(key);
+    setIsSettingsOpen(false);
+  };
+
+  const checkApiKey = () => {
+    if (!apiKey) {
+      setIsSettingsOpen(true);
+      return false;
+    }
+    return true;
+  };
+
   const handleGenerate = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!checkApiKey() || !input.trim() || loading) return;
+    
     setLoading(true);
     try {
-      const res = await geminiService.generateSongs(input, songCount, mode);
+      const res = await geminiService.generateSongs(apiKey, input, songCount, mode);
       
       const processed = (Array.isArray(res) ? res : []).map(s => ({
         ...s,
@@ -251,11 +294,11 @@ const App = () => {
   };
 
   const handleGenerateArt = async (song, forceRegenerate = false) => {
-    if (!song || (!forceRegenerate && song.artStatus === 'generating')) return;
+    if (!checkApiKey() || !song || (!forceRegenerate && song.artStatus === 'generating')) return;
     setSongs(prev => prev.map(s => s.id === song.id ? { ...s, artStatus: 'generating' } : s));
     try {
-      const prompt = await geminiService.generateArtPrompt(song, artStyle, aspectRatio);
-      const url = await geminiService.generateImage(prompt, aspectRatio);
+      const prompt = await geminiService.generateArtPrompt(apiKey, song, artStyle, aspectRatio);
+      const url = await geminiService.generateImage(apiKey, prompt, aspectRatio);
       if (url) {
         setSongs(prev => prev.map(s => s.id === song.id ? { ...s, coverUrl: url, artStatus: 'done' } : s));
       } else {
@@ -263,17 +306,17 @@ const App = () => {
       }
     } catch (e) { 
       setSongs(prev => prev.map(s => s.id === song.id ? { ...s, artStatus: 'error' } : s));
-      alert("이미지 생성 API 오류: Vercel 환경변수나 모델 이름을 확인하세요.");
+      alert(e.message || "이미지 생성에 실패했습니다.");
     }
   };
 
   const handleModalSubmit = async (value) => {
     setModalOpen(false);
-    if (!selectedSong || !value.trim()) return;
+    if (!checkApiKey() || !selectedSong || !value.trim()) return;
     const songId = selectedSong.id;
     try {
       if (modalConfig.type === 'remix') {
-        const style = await geminiService.remixStyle(selectedSong.style, mode, value);
+        const style = await geminiService.remixStyle(apiKey, selectedSong.style, mode, value);
         setSongs(prev => prev.map(s => s.id === songId ? { ...s, style } : s));
       } else if (modalConfig.type === 'refine') {
         const tag = modalConfig.tag;
@@ -282,7 +325,7 @@ const App = () => {
         if (blockIndex === -1) return;
 
         const currentContent = structure[blockIndex].content;
-        const newContent = await geminiService.rewriteLyricBlock(tag, currentContent, value);
+        const newContent = await geminiService.rewriteLyricBlock(apiKey, tag, currentContent, value);
         
         const newStructure = [...structure];
         newStructure[blockIndex] = { ...newStructure[blockIndex], content: newContent };
@@ -292,7 +335,7 @@ const App = () => {
           lyrics: { ...s.lyrics, structure: newStructure } 
         } : s));
       }
-    } catch (e) { alert("수정 중 오류가 발생했습니다."); }
+    } catch (e) { alert(e.message || "수정 중 오류가 발생했습니다."); }
   };
 
   const copyToClipboard = (text) => {
@@ -314,17 +357,9 @@ const App = () => {
 
   return (
     <div className="h-screen bg-[#09090b] text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30 w-full relative">
+      <SettingsModal isOpen={isSettingsOpen} currentKey={apiKey} onClose={() => setIsSettingsOpen(false)} onSave={saveApiKey} />
       <InputModal isOpen={modalOpen} title={modalConfig.title} placeholder={modalConfig.placeholder} onClose={() => setModalOpen(false)} onSubmit={handleModalSubmit} />
       <ImagePreviewModal isOpen={!!previewImage} imageUrl={previewImage} onClose={() => setPreviewImage(null)} />
-
-      {/* ⭐️ 진단용 상태 바 (화면 맨 위에 표시됩니다) ⭐️ */}
-      <div className={`w-full text-xs font-bold p-1.5 text-center flex items-center justify-center gap-2 shrink-0 ${apiKey ? 'bg-emerald-900/50 text-emerald-400' : 'bg-red-900/50 text-red-400'}`}>
-        {apiKey ? (
-           <><Check className="w-3 h-3" /> API 키 로드 완료 (시작: {apiKey.substring(0, 7)}...)</>
-        ) : (
-           <><AlertTriangle className="w-3 h-3" /> 🚨 API 키 누락: Vercel 환경 변수가 비어있습니다! (빌드를 다시 하세요)</>
-        )}
-      </div>
 
       {/* HEADER */}
       <header className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-4 z-20 w-full shrink-0">
@@ -357,6 +392,12 @@ const App = () => {
               </button>
             </div>
           </form>
+
+          {/* ⭐️ 우측 상단 톱니바퀴 (설정) 버튼 ⭐️ */}
+          <button onClick={() => setIsSettingsOpen(true)} className="flex items-center justify-center p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors border border-slate-700 shrink-0 group relative">
+             <Settings className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />
+             {!apiKey && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#09090b] animate-pulse"></span>}
+          </button>
         </div>
       </header>
 
