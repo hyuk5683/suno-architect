@@ -5,19 +5,22 @@ import { Sparkles, Disc, Music2, Trash2, Copy, Mic2, Radio, Play, Loader2, Image
 /* API SERVICE                                */
 /* -------------------------------------------------------------------------- */
 
-// ⭐️ AI 시스템의 방해를 받지 않는 진짜 Vercel용 API 키 호출 코드
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+// 🚨 Canvas 컴파일 환경(es2015) 오류를 방지하기 위해 임시로 비워둡니다.
+// Vercel 배포 시 VS Code에서 반드시 아래 주석 처리된 코드로 교체하세요!
+// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = "";
 
 const fetchWithRetry = async (url, options) => {
   const delays = [1000, 2000, 4000, 8000, 16000];
   for (let i = 0; i < 5; i++) {
     try {
       const response = await fetch(url, options);
-      if (response.status === 401 || response.status === 403) throw new Error(`API 권한 오류: API 키를 확인해주세요.`);
+      if (response.status === 401 || response.status === 403) throw new Error(`API 권한 오류: API 키가 거부되었습니다 (403).`);
+      if (response.status === 404) throw new Error(`API 모델 오류: 해당 AI 모델을 찾을 수 없습니다 (404).`);
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       return response;
     } catch (error) {
-      if (error.message.includes("권한")) throw error;
+      if (error.message.includes("권한") || error.message.includes("모델")) throw error;
       if (i === 4) throw error;
       await new Promise(resolve => setTimeout(resolve, delays[i]));
     }
@@ -310,9 +313,18 @@ const App = () => {
   };
 
   return (
-    <div className="h-screen bg-[#09090b] text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30 w-full">
+    <div className="h-screen bg-[#09090b] text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30 w-full relative">
       <InputModal isOpen={modalOpen} title={modalConfig.title} placeholder={modalConfig.placeholder} onClose={() => setModalOpen(false)} onSubmit={handleModalSubmit} />
       <ImagePreviewModal isOpen={!!previewImage} imageUrl={previewImage} onClose={() => setPreviewImage(null)} />
+
+      {/* ⭐️ 진단용 상태 바 (화면 맨 위에 표시됩니다) ⭐️ */}
+      <div className={`w-full text-xs font-bold p-1.5 text-center flex items-center justify-center gap-2 shrink-0 ${apiKey ? 'bg-emerald-900/50 text-emerald-400' : 'bg-red-900/50 text-red-400'}`}>
+        {apiKey ? (
+           <><Check className="w-3 h-3" /> API 키 로드 완료 (시작: {apiKey.substring(0, 7)}...)</>
+        ) : (
+           <><AlertTriangle className="w-3 h-3" /> 🚨 API 키 누락: Vercel 환경 변수가 비어있습니다! (빌드를 다시 하세요)</>
+        )}
+      </div>
 
       {/* HEADER */}
       <header className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-4 z-20 w-full shrink-0">
