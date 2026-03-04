@@ -46,7 +46,7 @@ const geminiService = {
         [
           {
             "title": "Song Title",
-            "style": "Description",
+            "style": "Description in English",
             "mood": "Visual mood for art (in English)",
             "lyrics": {
               "structure": [
@@ -71,7 +71,6 @@ const geminiService = {
       let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error("API 응답이 비어있습니다.");
 
-      // ⭐️ ChatGPT 제안 반영: 매우 강력한 JSON 파싱 방어 로직
       let parsed;
       try {
         parsed = JSON.parse(text);
@@ -93,6 +92,7 @@ const geminiService = {
   generateArtPrompt: async (song, artStyle, aspectRatio) => {
     try {
       const prompt = `Digital art director. 8k UHD album cover artwork. Mood: ${song.mood}. Style: ${artStyle}. Aspect: ${aspectRatio}. English tags only. ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY in the image. Ensure musical instruments are depicted realistically without unnatural physical phenomena.`;
+      
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,7 +104,6 @@ const geminiService = {
   },
 
   generateImage: async (visualPrompt, aspectRatio) => {
-    // 1. 완벽한 화면 비율(16:9, 9:16)을 지원하는 Imagen 4.0을 메인으로 사용
     try {
       const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST',
@@ -116,21 +115,6 @@ const geminiService = {
       });
       const data = await response.json();
       if (data.predictions?.[0]) return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
-    } catch (e) { console.warn("Imagen 4.0 failed, trying Gemini Flash Image fallback..."); }
-
-    // 2. 백업 모델 (Gemini Flash Image)
-    try {
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: visualPrompt }] }],
-          generationConfig: { responseModalities: ["IMAGE"] }
-        })
-      });
-      const data = await response.json();
-      const imgData = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-      if (imgData) return `data:image/png;base64,${imgData}`;
       throw new Error("이미지 생성에 실패했습니다.");
     } catch (e) { throw e; }
   },
@@ -239,10 +223,9 @@ const App = () => {
     try {
       const res = await geminiService.generateSongs(input, songCount, mode);
       
-      // ⭐️ ChatGPT 제안 반영: 매우 강력한 구조 검증 및 UUID 적용
       const processed = (Array.isArray(res) ? res : []).map(s => ({
         ...s,
-        id: crypto.randomUUID(), // Deprecated된 substr 대신 모던 스펙 사용
+        id: crypto.randomUUID(), 
         coverUrl: null,
         artStatus: 'idle',
         lyrics: {
@@ -274,7 +257,7 @@ const App = () => {
       }
     } catch (e) { 
       setSongs(prev => prev.map(s => s.id === song.id ? { ...s, artStatus: 'error' } : s));
-      alert("이미지 생성에 실패했습니다.");
+      alert("이미지 생성 API가 이 키를 지원하지 않거나 설정이 필요합니다.");
     }
   };
 
@@ -324,37 +307,37 @@ const App = () => {
   };
 
   return (
-    <div className="h-screen bg-[#09090b] text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30">
+    <div className="h-screen bg-[#09090b] text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30 w-full">
       <InputModal isOpen={modalOpen} title={modalConfig.title} placeholder={modalConfig.placeholder} onClose={() => setModalOpen(false)} onSubmit={handleModalSubmit} />
       <ImagePreviewModal isOpen={!!previewImage} imageUrl={previewImage} onClose={() => setPreviewImage(null)} />
 
       {/* HEADER */}
-      <header className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-4 z-20">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+      <header className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 p-4 z-20 w-full shrink-0">
+        <div className="w-full px-2 lg:px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
               <Music2 className="text-white w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tighter uppercase leading-none">SUNO ARCHITECT <span className="text-[9px] bg-gradient-to-r from-amber-400 to-orange-500 text-black px-1.5 py-0.5 rounded font-bold uppercase">PRO</span></h1>
+              <h1 className="text-lg font-black tracking-tighter uppercase leading-none flex items-center gap-2">SUNO ARCHITECT <span className="text-[9px] bg-gradient-to-r from-amber-400 to-orange-500 text-black px-1.5 py-0.5 rounded font-bold uppercase">PRO</span></h1>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">High-Fidelity Prompt Engine</p>
             </div>
           </div>
 
-          <form onSubmit={handleGenerate} className="flex-1 w-full flex flex-col md:flex-row gap-2">
+          <form onSubmit={handleGenerate} className="flex-1 w-full flex flex-col md:flex-row gap-2 max-w-4xl">
             <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 gap-2 items-center">
-              <div className="flex bg-slate-900 rounded-md p-0.5">
+              <div className="flex bg-slate-900 rounded-md p-0.5 shrink-0">
                  <button type="button" onClick={() => setMode('vocal')} className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${mode === 'vocal' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>VOCAL</button>
                  <button type="button" onClick={() => setMode('instrumental')} className={`px-3 py-1 text-[10px] font-bold rounded transition-all ${mode === 'instrumental' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>INST</button>
               </div>
-              <div className="flex items-center gap-2 px-2 border-l border-slate-800">
+              <div className="flex items-center gap-2 px-2 border-l border-slate-800 shrink-0">
                 <input type="range" min="1" max="5" value={songCount} onChange={(e) => setSongCount(parseInt(e.target.value))} className="w-16 h-1 accent-indigo-500 cursor-pointer"/>
                 <span className="text-[10px] font-bold text-indigo-400 w-4">{songCount}</span>
               </div>
             </div>
             <div className="flex-1 flex gap-2">
-              <input value={input} onChange={e => setInput(e.target.value)} disabled={loading} placeholder="Describe your song idea (e.g., Sad cinematic jazz)..." className="flex-1 bg-white text-slate-900 rounded-lg px-4 text-sm font-medium outline-none" />
-              <button disabled={loading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 px-6 rounded-lg font-bold text-sm transition-all whitespace-nowrap shadow-lg shadow-indigo-500/20">
+              <input value={input} onChange={e => setInput(e.target.value)} disabled={loading} placeholder="Describe your song idea (e.g., Sad cinematic jazz)..." className="flex-1 w-full min-w-0 bg-white text-slate-900 rounded-lg px-4 text-sm font-medium outline-none" />
+              <button disabled={loading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 px-6 rounded-lg font-bold text-sm transition-all whitespace-nowrap shadow-lg shadow-indigo-500/20 shrink-0">
                 {loading ? 'GENERATING...' : 'CREATE'}
               </button>
             </div>
@@ -363,50 +346,50 @@ const App = () => {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 flex overflow-hidden max-w-7xl mx-auto w-full">
+      <main className="flex-1 flex overflow-hidden w-full">
         {/* SIDEBAR */}
-        <aside className="w-72 bg-slate-900/30 border-r border-slate-800 flex flex-col hidden md:flex">
+        <aside className="w-64 lg:w-80 bg-slate-900/30 border-r border-slate-800 flex flex-col hidden md:flex shrink-0">
           <div className="p-4 border-b border-slate-800 text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
             <Disc className="w-3 h-3" /> History
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {songs.map(song => (
-              <div key={song.id} onClick={() => setSelectedId(song.id)} className={`p-3 rounded-xl cursor-pointer border transition-all ${selectedId === song.id ? 'bg-indigo-500/10 border-indigo-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
-                <h3 className={`text-xs font-bold truncate ${selectedId === song.id ? 'text-indigo-200' : 'text-slate-400'}`}>{song.title}</h3>
-                <p className="text-[10px] text-slate-600 truncate mt-1">{song.style}</p>
+              <div key={song.id} onClick={() => setSelectedId(song.id)} className={`p-4 rounded-xl cursor-pointer border transition-all ${selectedId === song.id ? 'bg-indigo-500/10 border-indigo-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                <h3 className={`text-sm font-bold truncate ${selectedId === song.id ? 'text-indigo-200' : 'text-slate-400'}`}>{song.title}</h3>
+                <p className="text-xs text-slate-600 truncate mt-1.5">{song.style}</p>
               </div>
             ))}
           </div>
         </aside>
 
         {/* WORKSPACE */}
-        <section className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-[#09090b] to-[#121217]">
+        <section className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-[#09090b] to-[#121217] relative">
           {selectedSong ? (
-            <div className="flex-1 overflow-y-auto p-6 lg:p-10">
-              <div className="flex flex-col lg:flex-row gap-8 mb-10">
+            <div className="flex-1 overflow-y-auto p-6 lg:p-12 xl:p-16">
+              <div className="flex flex-col lg:flex-row gap-10 mb-12 max-w-6xl">
                 {/* ALBUM ART AREA */}
-                <div className="shrink-0 flex flex-col gap-3">
-                  <div className={`relative group w-full lg:w-80 bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden shadow-2xl transition-all duration-300 ${aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16] lg:w-56'}`}>
+                <div className="shrink-0 flex flex-col gap-4">
+                  <div className={`relative group w-full lg:w-[360px] bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden shadow-2xl transition-all duration-300 ${aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16] lg:w-64'}`}>
                     {selectedSong.coverUrl ? (
                       <>
                         <img src={selectedSong.coverUrl} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setPreviewImage(selectedSong.coverUrl)} />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-opacity duration-200">
-                          <div className="flex gap-2">
-                            <a href={selectedSong.coverUrl} download="cover.png" className="px-4 py-2 bg-white hover:bg-slate-200 text-black rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><Copy className="w-4 h-4" /> Download</a>
-                            <button onClick={() => handleGenerateArt(selectedSong, true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><RefreshCw className="w-4 h-4" /> Regenerate</button>
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-opacity duration-200">
+                          <div className="flex flex-col gap-2">
+                            <a href={selectedSong.coverUrl} download="cover.png" className="px-5 py-2.5 bg-white hover:bg-slate-200 text-black rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-lg"><Copy className="w-4 h-4" /> Download</a>
+                            <button onClick={() => handleGenerateArt(selectedSong, true)} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-lg"><RefreshCw className="w-4 h-4" /> Regenerate</button>
                           </div>
                         </div>
                       </>
                     ) : (
                       <div className="text-center p-4">
                         {selectedSong.artStatus === 'generating' ? (
-                          <div className="flex flex-col items-center gap-2">
-                            <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
-                            <span className="text-[10px] font-bold text-slate-500">생성 중...</span>
+                          <div className="flex flex-col items-center gap-3">
+                            <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+                            <span className="text-xs font-bold text-slate-500">생성 중...</span>
                           </div>
                         ) : (
-                          <button onClick={() => handleGenerateArt(selectedSong)} className="bg-indigo-600 text-white px-4 py-2 rounded-full text-[10px] font-bold flex items-center gap-2 hover:bg-indigo-500 transition-all">
-                            <Paintbrush className="w-3 h-3" /> Generate Art
+                          <button onClick={() => handleGenerateArt(selectedSong)} className="bg-indigo-600 text-white px-5 py-3 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20">
+                            <Paintbrush className="w-4 h-4" /> Generate Art
                           </button>
                         )}
                       </div>
@@ -414,42 +397,42 @@ const App = () => {
                   </div>
                   
                   {/* ART CONTROLS */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2 bg-slate-900/50 p-2 rounded-xl border border-slate-800">
-                      <Palette className="w-3 h-3 text-slate-500" />
-                      <select value={artStyle} onChange={e => setArtStyle(e.target.value)} className="bg-transparent text-[10px] font-bold text-slate-300 outline-none w-full cursor-pointer">
+                  <div className="flex flex-col gap-2 w-full lg:w-[360px]">
+                    <div className="flex items-center gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                      <Palette className="w-4 h-4 text-slate-500 shrink-0" />
+                      <select value={artStyle} onChange={e => setArtStyle(e.target.value)} className="bg-transparent text-xs font-bold text-slate-300 outline-none w-full cursor-pointer">
                         {ART_STYLES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
                       </select>
                     </div>
-                    <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 gap-1">
-                      <button onClick={() => setAspectRatio("16:9")} className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${aspectRatio === "16:9" ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                        <Monitor className="w-3 h-3 mr-1.5" /> 16:9
+                    <div className="flex bg-slate-900/50 p-1.5 rounded-xl border border-slate-800 gap-1.5">
+                      <button onClick={() => setAspectRatio("16:9")} className={`flex-1 flex items-center justify-center py-2 rounded-lg text-xs font-bold transition-all ${aspectRatio === "16:9" ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                        <Monitor className="w-4 h-4 mr-2" /> 16:9
                       </button>
-                      <button onClick={() => setAspectRatio("9:16")} className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${aspectRatio === "9:16" ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                        <Smartphone className="w-3 h-3 mr-1.5" /> 9:16
+                      <button onClick={() => setAspectRatio("9:16")} className={`flex-1 flex items-center justify-center py-2 rounded-lg text-xs font-bold transition-all ${aspectRatio === "9:16" ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                        <Smartphone className="w-4 h-4 mr-2" /> 9:16
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* SONG INFO AREA */}
-                <div className="flex-1 flex flex-col justify-center">
-                   <div className="flex gap-2 mb-4">
-                     <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded pl-3 pr-1 py-1">
-                       <span className="text-indigo-300 text-[10px] font-black uppercase tracking-wider mr-2">{selectedSong.style}</span>
-                       <button onClick={() => {setModalConfig({type: 'remix', title: '스타일 리믹스', placeholder: '템포, 악기, 분위기를 어떻게 바꿀까요?'}); setModalOpen(true);}} className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[9px] font-bold flex items-center gap-1 transition-all shadow-lg shadow-indigo-500/20">
-                         <Edit3 className="w-2.5 h-2.5" /> Remix
+                <div className="flex-1 flex flex-col justify-center max-w-3xl">
+                   <div className="flex gap-3 mb-6">
+                     <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg pl-3 pr-1.5 py-1.5">
+                       <span className="text-indigo-300 text-xs font-black uppercase tracking-wider mr-2 leading-none">{selectedSong.style}</span>
+                       <button onClick={() => {setModalConfig({type: 'remix', title: '스타일 리믹스', placeholder: '템포, 악기, 분위기를 어떻게 바꿀까요?'}); setModalOpen(true);}} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20">
+                         <Edit3 className="w-3 h-3" /> Remix
                        </button>
                      </div>
                    </div>
-                   <h2 className="text-4xl font-black mb-8 leading-tight tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+                   <h2 className="text-5xl font-black mb-10 leading-tight tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
                      {selectedSong.title}
                    </h2>
-                   <div className="flex flex-wrap gap-3">
-                     <button onClick={() => copyToClipboard(getFullPrompt(selectedSong))} className="bg-white hover:bg-slate-100 text-black px-6 py-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-xl shadow-white/5">
+                   <div className="flex flex-wrap gap-4">
+                     <button onClick={() => copyToClipboard(getFullPrompt(selectedSong))} className="bg-white hover:bg-slate-100 text-black px-6 py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-xl shadow-white/5">
                        <Copy className="w-4 h-4" /> COPY FULL PROMPT
                      </button>
-                     <button onClick={() => copyToClipboard(selectedSong.style)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 border border-slate-700">
+                     <button onClick={() => copyToClipboard(selectedSong.style)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-95 border border-slate-700">
                        <Zap className="w-4 h-4 text-amber-400" /> STYLE ONLY
                      </button>
                    </div>
@@ -457,7 +440,7 @@ const App = () => {
               </div>
 
               {/* LYRICS / STRUCTURE AREA */}
-              <div className="max-w-4xl border-t border-slate-800 pt-10">
+              <div className="max-w-4xl border-t border-slate-800 pt-12">
                  {(selectedSong.lyrics?.structure || []).map((block, idx) => (
                    <LyricBlock 
                     key={idx} 
@@ -476,10 +459,10 @@ const App = () => {
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center opacity-30 gap-6">
-              <div className="w-24 h-24 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-                <Music2 className="w-10 h-10 text-slate-600" />
+              <div className="w-32 h-32 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shadow-2xl">
+                <Music2 className="w-12 h-12 text-slate-600" />
               </div>
-              <p className="font-black uppercase tracking-widest text-sm text-slate-500">Design your next hit song</p>
+              <p className="font-black uppercase tracking-widest text-base text-slate-500">Design your next hit song</p>
             </div>
           )}
         </section>
