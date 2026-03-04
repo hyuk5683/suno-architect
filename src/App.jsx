@@ -5,7 +5,8 @@ import { Sparkles, Disc, Music2, Trash2, Copy, Mic2, Radio, Play, Loader2, Image
 /* API SERVICE                                */
 /* -------------------------------------------------------------------------- */
 
-const apiKey = "";
+// ⭐️ AI 시스템의 방해를 받지 않는 진짜 Vercel용 API 키 호출 코드
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 const fetchWithRetry = async (url, options) => {
   const delays = [1000, 2000, 4000, 8000, 16000];
@@ -58,7 +59,8 @@ const geminiService = {
         ]
       `;
 
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      // ⭐️ 정식 출시 모델인 gemini-1.5-flash 사용
+      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,7 +95,7 @@ const geminiService = {
     try {
       const prompt = `Digital art director. 8k UHD album cover artwork. Mood: ${song.mood}. Style: ${artStyle}. Aspect: ${aspectRatio}. English tags only. ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY in the image. Ensure musical instruments are depicted realistically without unnatural physical phenomena.`;
       
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -105,7 +107,8 @@ const geminiService = {
 
   generateImage: async (visualPrompt, aspectRatio) => {
     try {
-      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
+      // ⭐️ 정식 이미지 모델인 imagen-3.0-generate-001 사용
+      const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,7 +124,7 @@ const geminiService = {
 
   remixStyle: async (currentStyle, musicType, modification) => {
     const prompt = `Modify music style. Current: "${currentStyle}". Request: "${modification}". Output ONLY the new style string in the original language.`;
-    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -132,7 +135,7 @@ const geminiService = {
 
   rewriteLyricBlock: async (tag, content, instruction) => {
     const prompt = `Rewrite section [${tag}]. Current: "${content}". Instruction: "${instruction}". Output ONLY new content in original language.`;
-    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -257,7 +260,7 @@ const App = () => {
       }
     } catch (e) { 
       setSongs(prev => prev.map(s => s.id === song.id ? { ...s, artStatus: 'error' } : s));
-      alert("이미지 생성 API가 이 키를 지원하지 않거나 설정이 필요합니다.");
+      alert("이미지 생성 API 오류: Vercel 환경변수나 모델 이름을 확인하세요.");
     }
   };
 
